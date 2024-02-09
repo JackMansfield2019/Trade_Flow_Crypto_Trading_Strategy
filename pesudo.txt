@@ -1,0 +1,266 @@
+HIGH LEVEL OVERVIEW:
+
+hyper parameters:
+Tau SHould be bigger than T but should be in the same magnitude
+T
+j
+zeta(trading cost)
+
+Read in data
+
+BTC_USD_book
+BTC_USD_trades
+
+ETH_BTC_book
+ETH_BTC_trades
+
+ETH_USD_book
+ETH_USD_trades
+
+Drop 2nd bid/ask price from book data 
+
+Data processing:
+    rename columns
+    drop unesscary columns
+    convert units from millions/billions to something usable.
+    Set index's
+
+SPLIT THE DATA
+
+def Lump_trades():
+    # Lumps trades which occur at the same time together into one row.
+
+Lump_trades(BTC_USD_trades_train)
+Lump_trades(ETH_BTC_trades_train)
+Lump_trades(ETH_USD_trades_train)
+
+taus = [5,10,15]
+Def Calculate_Trade_flow(tau, trade_data ):
+    # calculate trade flow for a corresponding tau
+    # use rolling window method
+
+for tau in taus:
+    BTC_USD_trades_train[] = Calculate_Trade_flow(tau, BTC_USD_trades_train)
+    ETH_BTC_trades_train[] = Calculate_Trade_flow(tau, ETH_BTC_trades_train)
+    ETH_USD_trades_train[] = Calculate_Trade_flow(tau, ETH_USD_trades_train)
+
+    BTC_USD_trades_test[] = Calculate_Trade_flow(tau, BTC_USD_trades_test)
+    ETH_BTC_trades_test[] = Calculate_Trade_flow(tau, ETH_BTC_trades_test)
+    ETH_USD_trades_test[] = Calculate_Trade_flow(tau, ETH_USD_trades_test)
+
+timestamp_utc_nanoseconds    Side   PriceMillionths    SizeBillionths  F_5    F_10    F_15 
+
+
+
+Ts = [5,10,15]
+Def Calculate_Forward_return(T, book_data/Trade data):
+    # calculate forward-return for a corresponding T
+    # need to do it with mid price
+
+    # need to get the mid price closest to t and t+T
+
+    # solution: re index and forward fill to a new tale
+    # new_Index's = trade_data. index + Tau
+    # reindex and forward fill 
+    P_t = trade_row["price"]
+    P_t+T = reg_midprice[trade_row["time"]]
+    trade_row["R"]= (P_t+T - P_t)/P_t
+
+
+for T in Ts:
+    BTC_USD_trades_train[] = Calculate_Forward_return(T, BTC_USD_trades_train)
+    ETH_BTC_trades_train[] = Calculate_Forward_return(T, ETH_BTC_trades_train)
+    ETH_USD_trades_train[] = Calculate_Forward_return(T, ETH_USD_trades_train)
+
+    BTC_USD_trades_test[] = Calculate_Forward_return(T, BTC_USD_trades_test)
+    ETH_BTC_trades_test[] = Calculate_Forward_return(T, ETH_BTC_trades_test)
+    ETH_USD_trades_test[] = Calculate_Forward_return(T, ETH_USD_trades_test)
+
+timestamp_utc_nanoseconds    Side   PriceMillionths    SizeBillionths  F_5    F_10    F_15    R_5    R_10    R_15
+
+
+
+def Calulate_beta(F, R):
+    # calulates beta for a specified F & R 
+
+for T in Ts:
+    BTC_USD_trades_train['B_{}'] = Calculate_Forward_return(T, BTC_USD_trades_train)
+    ETH_BTC_trades_train['B_{}'] = Calculate_Forward_return(T, ETH_BTC_trades_train)
+    ETH_USD_trades_train['B_{}'] = Calculate_Forward_return(T, ETH_USD_trades_train)
+
+    BTC_USD_trades_test['B_{}'] = Calculate_Forward_return(T, BTC_USD_trades_test)
+    ETH_BTC_trades_test['B_{}'] = Calculate_Forward_return(T, ETH_BTC_trades_test)
+    ETH_USD_trades_test['B_{}'] = Calculate_Forward_return(T, ETH_USD_trades_test)
+
+timestamp_utc_nanoseconds    Side   PriceMillionths    SizeBillionths  F_5    F_10    F_15    R_5    R_10    R_15    B_5    B_10    B_15
+
+
+Def calulate_R_hats():
+    # Calulates the R_hat for a specfic B & F pair
+
+???
+
+timestamp_utc_nanoseconds    Side   PriceMillionths    SizeBillionths  R_hat_10_10 R_hat_10_15 R_hat_15_10 R_hat_15_15 ... 
+
+
+# Extend PandasData to include additional columns
+class ExtendedPandasData(bt.feeds.PandasData):
+    # Add a 'lines' definition for each extra column
+    lines = ('timestamp_utc_nanoseconds', 'Side','PriceMillionths','SizeBillionths','R_hat_10_10', 'R_hat_10_15','R_hat_15_10', 'R_hat_15_15')
+    
+    # Add the corresponding parameters
+    params = (
+        ('timestamp_utc_nanoseconds', -1),
+        ('Side', -1),
+        ('PriceMillionths', -1),
+        ('SizeBillionths', -1),
+        ('R_hat_10_10', -1),
+        ('R_hat_10_15', -1),
+        ('R_hat_15_10', -1),
+        ('R_hat_15_15', -1)
+    )
+
+# Analyzer allowng us to track the cumulative PnL
+class CumulativePNL(bt.Analyzer):
+    def __init__(self):
+        self.pnl = []
+
+    def next(self):
+        # Assuming self.strategy.broker.getvalue() gives the portfolio value
+        self.pnl.append(self.strategy.broker.getvalue() - self.strategy.broker.startingcash)
+
+    def get_analysis(self):
+        return self.pnl
+
+class FlowTradingStrategy(bt.Strategy):
+    # Strategy parameters
+    params = (
+        ('Tau', 15),  # M-day return period
+        ('T', 0.003),  # Entry threshold
+        ('j', 0.001),  # Exit threshold
+        ('zeta', 0.0001),  # Trading cost
+    )
+
+    # Custom strategy lines
+    lines = ('cumulative_pnl', 'unrealized_pnl', 'gross_traded_cash', 'cash')
+
+    def __init__(self):
+        # Data storage for plotting
+        self.data_dict = []
+
+    def next(self):
+        # Create a Dict to store all 'X' data from this period
+        self.x_data = self.getdatabyname('X')
+        self.x_dict = {}
+
+        R_hat = Beta[tau = 10 T = 15 .. ect] * F_10
+        if abs(R_hat) > j:
+            if R_hat < 0:
+            
+            elif R_hat > 0:
+    
+        # Save data each bar for later ploting
+        self.data_dict.append({
+            time = self.lines.timestamp_utc_nanoseconds[0],
+            Side = self.lines.side[0]
+            ('PriceMillionths', -1),
+            ('SizeBillionths', -1),
+            cash
+            position
+            R_hat
+            "Cumulative PnL" : self.lines.cumulative_pnl[0], 
+            "Unrealized PnL": self.lines.unrealized_pnl[0], 
+            "Gross Traded Cash": self.lines.gross_traded_cash[0],
+        })
+
+
+
+retrieve the cum Pnl data 
+
+T_pre = addtional time column in trades data frame. after reindex and forward will this will contain the date a 
+        regular timestamp forword filled from.
+        Ex: Adj_book_df[10][T_pre] = 7(the time of the irregular index used to fill in this regular timestamp)
+
+reg_index = pd.index(10*10^9 * np.array(18000) + utc_ns_???)
+trade_irr_index = trades.index
+union_index = trade_irr_index.union(reg_index)
+
+
+trade_df:Index(time)    T_pre(time)    Price    size    cash    position  PNL    # data frame extracted from backtest (1 row = 1 trade) 
+
+adj_trade_df = trade_df.reindex(union_index).fillna(method = 'ffill') # add rows for regular time intervals and fill them with prev values
+val_at_reg = adj_trade_df.loc[reg_index]
+# For the regular Time stamps I should be able to get:
+    # T_pre, cash, price, current_postion
+
+Issue: in order to calulate port folio return from T_pre to reg_index, we need values at 
+
+Mid_irr_index = book.index
+T_pre_index = pd.index(adj_trade_df['T_pre'].unique())
+mid_pre_union = T_pre.union(Mid_irr_index).union(reg_index)
+Adj_book_df = book_df.reindex(mid_pre_union).fillna(method  = 'ffill')
+# now we have mid price data for:
+    # reg_index
+    # trade_irr_index
+    # mid_pre_union
+
+adj_trade_df.loc[reg_index,PNL] = adj_trade_df.loc[reg_index,position]*(Adj_book_df.loc[reg_index] - Adj_book_df.loc[trade_irr_index,position])
+
+
+
+Calc returns, sharp, ect.
+
+
+
+
+
+Additional Complexities:
+
+Calc stats for training and testing sets independently to elimiate data snooping/ information bleeding between sets
+
+Using Midprice for Forward_return & PNL prices
+
+Incorperate Lag into predictions.
+
+Hyper parameter tuning
+
+Add in order book imablance as a trading signal and test it.
+
+ETTH-BTC do everthing in eth convert to dollars (ever pnl number when trying to calc stat)
+
+
+
+Resampling data:
+Idea: resample trade data and book data to intervals of wall clock values.
+
+Pros:
+can merge book data and trade data ( makes it easier for back tester and for advanced method)
+
+if interval = tau it will be easy to calulate trade flow
+
+Cons:
+makes it harder to iterate through trades.(although might be fine with grouping and then iterating through groups)
+If interval = Tau then it will be hard to calulate forward returns
+Would not be able to use back trader's hyper-parameter optimization with differnt T's
+ because we would need sperate data frames for each  
+Back trader needs to iterate throuhg trade by trade. 
+
+
+vary trading cost assumptions (with and without)
+
+Examine Sharpe ratios, drawdowns and tails.
+
+further split the data set into differnt Traning/testing sets.
+    analysis on stability of β (how much does β change when we change our traning size) 
+        If alot -> β is not that stable and very sensitive to our training set
+        If little -> β is a stable relationship which is evident no matter what size traning set we give it.
+    analysis on reliability of β (how much does out of sample performance vary as β/traning size varies)
+        If alot -> β is not that realiable out of sample. 
+        If little -> β is realiable out of sample. 
+        NOTE: Might find that we need a dynamic tau.
+
+how you chose j (hyper parameter Tuning)
+
+and what you might expect from using much longer training and test periods.
+    longer = more data to uncover relationship might be better OR doesnt matter how big traning set it what we need to vary is tau and T
+    Shorter = less data to uncover relationship = worse. 
